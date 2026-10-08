@@ -150,6 +150,14 @@ def test_header_option_splits_on_first_colon_and_strips():
     assert scc._header(" Authorization : Basic a:b ") == ("Authorization", "Basic a:b")
 
 
+def test_check_all_uses_get_by_default_and_head_on_request(server):
+    url = f"{server.url}/status/204"
+
+    assert classify([url]) == {"204": [url]}
+    assert classify([url], method="HEAD") == {"204": [url]}
+    assert server.methods == ["GET", "HEAD"]
+
+
 def test_check_all_sends_extra_headers(server):
     url = f"{server.url}/need-auth"
 
@@ -597,9 +605,19 @@ def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
         scc, "check_all", lambda urls, **kw: calls.append((urls, kw)) or []
     )
 
-    assert scc.main(["--workers", "3", "--retry", "2", str(tmp_path / "u.txt")]) == 0
+    options = ["--workers", "3", "--retry", "2", "--head"]
+    assert scc.main([*options, str(tmp_path / "u.txt")]) == 0
     assert calls == [
-        (["http://a/"], {"timeout": 10.0, "workers": 3, "retry": 2, "headers": {}})
+        (
+            ["http://a/"],
+            {
+                "timeout": 10.0,
+                "workers": 3,
+                "retry": 2,
+                "headers": {},
+                "method": "HEAD",
+            },
+        )
     ]
 
 

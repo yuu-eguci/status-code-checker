@@ -71,25 +71,31 @@ class Result:
 
 
 def check(
-    session: requests.Session, url: str, timeout: float, retry: int = 0
+    session: requests.Session,
+    url: str,
+    timeout: float,
+    retry: int = 0,
+    method: str = "GET",
 ) -> Result:
     """URL 1 つを調べます。一時的なエラーなら ``retry`` 回まで調べ直します。"""
-    result = _check_once(session, url, timeout)
+    result = _check_once(session, url, timeout, method)
     for _ in range(retry):
         if result.group not in RETRY_GROUPS:
             break
-        result = _check_once(session, url, timeout)
+        result = _check_once(session, url, timeout, method)
     return result
 
 
-def _check_once(session: requests.Session, url: str, timeout: float) -> Result:
+def _check_once(
+    session: requests.Session, url: str, timeout: float, method: str
+) -> Result:
     """URL 1 つを 1 回だけ調べます。本文はダウンロードしません。"""
     if not is_valid_url(url):
         return Result(url, INVALID_URL)
     started = time.perf_counter()
     try:
-        with session.get(
-            url, allow_redirects=False, stream=True, timeout=timeout
+        with session.request(
+            method, url, allow_redirects=False, stream=True, timeout=timeout
         ) as response:
             return Result(
                 url,
@@ -121,6 +127,7 @@ def check_all(
     workers: int = 1,
     retry: int = 0,
     headers: Mapping[str, str] | None = None,
+    method: str = "GET",
 ) -> list[Result]:
     """すべての URL を調べ、入力順の結果を返します。
 
@@ -135,7 +142,7 @@ def check_all(
             local.session.headers["User-Agent"] = USER_AGENT
             local.session.headers.update(headers or {})
             sessions.append(local.session)
-        return check(local.session, url, timeout, retry)
+        return check(local.session, url, timeout, retry, method)
 
     try:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -321,6 +328,11 @@ def main(argv: list[str] | None = None) -> int:
         help="一時的なエラーになった URL を調べ直す回数 (既定: 0)",
     )
     parser.add_argument(
+        "--head",
+        action="store_true",
+        help="GET の代わりに HEAD を送ります",
+    )
+    parser.add_argument(
         "--header",
         type=_header,
         action="append",
@@ -383,6 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.workers,
         retry=args.retry,
         headers=dict(args.header),
+        method="HEAD" if args.head else "GET",
     )
     shown = [
         result

@@ -15,6 +15,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self.server.hits.append(self.path)
+        self.server.methods.append(self.command)
         path = urlsplit(self.path).path
         if path.startswith("/flaky/"):
             # 最初の n 回は応答せずに切断し、その後は 200 を返します。
@@ -36,6 +37,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
         code = int(match.group(1)) if match else 200
         return self._respond(code)
 
+    do_HEAD = do_GET  # noqa: N815 (http.server が要求する名前です)
+
     def _respond(self, code: int) -> None:
         self.send_response(code)
         if 300 <= code < 400:
@@ -54,6 +57,7 @@ class FixtureServer(ThreadingHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), FixtureHandler)
         self.hits: list[str] = []
+        self.methods: list[str] = []
         self.attempts: dict[str, int] = {}
 
     @property

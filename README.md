@@ -41,6 +41,7 @@ uvx --from git+https://github.com/yuu-eguci/status-code-checker status-code-chec
 - `--timeout 秒` で 1 URL あたりのタイムアウトを変えられます (既定 10 秒)。
 - `--workers 数` で同時に調べる URL の数を増やせます (既定 1)。出力の順番は変わりません。
 - `--retry 回数` で `TIMEOUT` / `CONNECTION_ERROR` / `ERROR` になった URL をその回数まで調べ直します (既定 0)。
+- `--head` で GET の代わりに HEAD を送れます (HEAD に 405 などを返すサーバーもあるので既定は GET です)。
 - `--expect 200,3xx` のように期待するコードを指定すると、合わない URL があれば終了コード 1 になります (CI 向け)。
 - `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
