@@ -4,7 +4,7 @@
 ```
 python status_code_checker.py [--timeout 秒] [--workers 数]
                               [--expect パターン] [--only パターン] [--exclude パターン]
-                              [FILE ...]
+                              [-v] [FILE ...]
 ```
 
 | オプション | 既定 | 説明 |
@@ -15,6 +15,18 @@ python status_code_checker.py [--timeout 秒] [--workers 数]
 | `--expect パターン` | なし | 期待するステータスコードです。合わない URL が 1 つでもあれば、その件数を標準エラーに出して終了コード 1 になります。エラーグループは常に「合わない」扱いで、パターンにはコードのみ指定できます。出力は変わりません。 |
 | `--only パターン` | なし | 指定したグループだけを表示します。 |
 | `--exclude パターン` | なし | 指定したグループを表示から外します。`--only` と同時に指定すると両方が適用されます。 |
+| `-v`, `--verbose` | オフ | 各 URL の行に、応答ヘッダが届くまでの時間 (ms)、Content-Type、Location を 2 つの空白区切りで添えます。分からない項目は省きます。 |
+
+`-v` の出力例です。本文はダウンロードしないので、時間は応答ヘッダが届くまでの時間です (エラーの場合は諦めるまでの時間)。
+
+```
+200
+  https://example.com/  38ms  text/html
+301
+  http://example.com/old  41ms  text/html  -> https://example.com/new
+TIMEOUT
+  https://example.com/slow  10002ms
+```
 
 `--only` と `--exclude` は表示だけを絞ります。終了コードは絞る前の結果で決まります。
 

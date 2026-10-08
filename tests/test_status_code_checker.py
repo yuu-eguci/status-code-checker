@@ -1,4 +1,5 @@
 import io
+import re
 import sys
 import time
 from pathlib import Path
@@ -8,12 +9,20 @@ import pytest
 import status_code_checker as scc
 
 
+def classify(urls, **kwargs):
+    """旧 API と同じ {グループ: [URL]} を作るテスト用ヘルパーです。"""
+    groups = scc.group(scc.check_all(urls, **kwargs))
+    return {
+        name: [result.url for result in results] for name, results in groups.items()
+    }
+
+
 def test_parse_urls_strips_blank_comment_and_duplicate_lines():
     text = "\n  http://a/ \r\nhttp://b/\n\n# comment\nhttp://a/\n   \n"
     assert scc.parse_urls(text) == ["http://a/", "http://b/"]
 
 
-def test_classify_groups_by_status_and_does_not_follow_redirects(server):
+def test_check_all_groups_by_status_and_does_not_follow_redirects(server):
     urls = [
         f"{server.url}/status/200",
         f"{server.url}/status/404",
@@ -21,7 +30,7 @@ def test_classify_groups_by_status_and_does_not_follow_redirects(server):
         f"{server.url}/status/302",
         f"{server.url}/status/500",
     ]
-    result = scc.classify(urls)
+    result = classify(urls)
     assert result == {
         "200": [urls[0]],
         "404": [urls[1]],
@@ -32,42 +41,44 @@ def test_classify_groups_by_status_and_does_not_follow_redirects(server):
     assert "/redirected" not in server.hits
 
 
-def test_classify_keeps_input_order_within_a_group(server):
+def test_check_all_keeps_input_order_within_a_group(server):
     urls = [f"{server.url}/status/200?n={n}" for n in ("b", "a", "c")]
-    assert scc.classify(urls) == {"200": urls}
+    assert classify(urls) == {"200": urls}
 
 
-def test_classify_workers_run_requests_in_parallel(server):
+def test_check_all_workers_run_requests_in_parallel(server):
     urls = [f"{server.url}/sleep?n={n}" for n in range(4)]
 
     started = time.monotonic()
-    result = scc.classify(urls, timeout=5, workers=4)
+    result = classify(urls, timeout=5, workers=4)
 
     assert time.monotonic() - started < 1.5  # 4 x 0.5 秒が直列なら 2 秒以上
     assert result == {"200": urls}
 
 
-def test_classify_workers_keep_input_order_even_when_later_urls_finish_first(
+def test_check_all_workers_keep_input_order_even_when_later_urls_finish_first(
     server,
 ):
     slow = f"{server.url}/sleep"
     fast = f"{server.url}/status/200"
 
-    assert scc.classify([slow, fast], timeout=5, workers=2) == {"200": [slow, fast]}
+    assert classify([slow, fast], timeout=5, workers=2) == {"200": [slow, fast]}
 
 
-def test_classify_reports_timeout_without_crashing(server):
+def test_check_all_reports_timeout_without_crashing(server):
     urls = [f"{server.url}/sleep", f"{server.url}/status/200"]
-    result = scc.classify(urls, timeout=0.1)
-    assert result == {"TIMEOUT": [urls[0]], "200": [urls[1]]}
+    results = scc.check_all(urls, timeout=0.1)
+
+    assert [r.group for r in results] == ["TIMEOUT", "200"]
+    assert results[0].elapsed_ms >= 100
 
 
-def test_classify_reports_connection_error(closed_port):
+def test_check_all_reports_connection_error(closed_port):
     url = f"http://127.0.0.1:{closed_port}/"
-    assert scc.classify([url]) == {"CONNECTION_ERROR": [url]}
+    assert classify([url]) == {"CONNECTION_ERROR": [url]}
 
 
-def test_classify_reports_invalid_urls_without_requesting(server):
+def test_check_all_reports_invalid_urls_without_requesting(server):
     urls = [
         "example.com",
         "ftp://example.com/",
@@ -77,21 +88,21 @@ def test_classify_reports_invalid_urls_without_requesting(server):
         "http://exa mple.com/",
         "http://localhost:99999/",
     ]
-    assert scc.classify(urls) == {"INVALID_URL": urls}
+    assert classify(urls) == {"INVALID_URL": urls}
     assert server.hits == []
 
 
-def test_classify_sends_identifying_user_agent(server):
+def test_check_all_sends_identifying_user_agent(server):
     url = f"{server.url}/ua"
-    assert scc.classify([url]) == {"200": [url]}
+    assert classify([url]) == {"200": [url]}
 
 
 def test_format_result_sorts_status_codes_then_error_groups():
     result = {
-        "TIMEOUT": ["http://t/"],
-        "404": ["http://n/"],
-        "200": ["http://a/", "http://b/"],
-        "CONNECTION_ERROR": ["http://c/"],
+        "TIMEOUT": [scc.Result("http://t/", "TIMEOUT")],
+        "404": [scc.Result("http://n/", "404")],
+        "200": [scc.Result("http://a/", "200"), scc.Result("http://b/", "200")],
+        "CONNECTION_ERROR": [scc.Result("http://c/", "CONNECTION_ERROR")],
     }
     assert scc.format_result(result) == (
         "200\n  http://a/\n  http://b/\n"
@@ -180,6 +191,63 @@ def test_main_only_and_exclude_filter_display_but_not_exit_code(
     assert capsys.readouterr().out == ""
 
 
+def test_check_all_collects_metadata(server, closed_port):
+    ok = f"{server.url}/status/200"
+    moved = f"{server.url}/status/301"
+    down = f"http://127.0.0.1:{closed_port}/"
+
+    bad_port = "http://localhost:99999/"
+
+    results = scc.check_all([ok, moved, down, "nope", bad_port])
+
+    assert [r.url for r in results] == [ok, moved, down, "nope", bad_port]
+    assert results[0].status == 200
+    assert results[0].location is None
+    assert results[0].content_type == "text/plain"
+    assert isinstance(results[0].elapsed_ms, int) and results[0].elapsed_ms >= 0
+    assert (results[1].status, results[1].location) == (301, "/redirected")
+    assert (results[2].group, results[2].status, results[2].content_type) == (
+        "CONNECTION_ERROR",
+        None,
+        None,
+    )
+    assert isinstance(results[2].elapsed_ms, int)
+    assert results[3] == scc.Result("nope", "INVALID_URL")
+    assert results[4] == scc.Result(bad_port, "INVALID_URL")
+
+
+def test_format_result_verbose_appends_known_metadata():
+    result = {
+        "200": [
+            scc.Result(
+                "http://a/", "200", status=200, content_type="text/html", elapsed_ms=12
+            )
+        ],
+        "301": [
+            scc.Result("http://m/", "301", status=301, location="/new", elapsed_ms=7)
+        ],
+        "TIMEOUT": [scc.Result("http://t/", "TIMEOUT", elapsed_ms=10002)],
+        "INVALID_URL": [scc.Result("nope", "INVALID_URL")],
+    }
+    assert scc.format_result(result, verbose=True) == (
+        "200\n  http://a/  12ms  text/html\n"
+        "301\n  http://m/  7ms  -> /new\n"
+        "INVALID_URL\n  nope\n"
+        "TIMEOUT\n  http://t/  10002ms"
+    )
+
+
+def test_main_verbose_option(server, tmp_path: Path, capsys):
+    moved = f"{server.url}/status/302"
+    (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
+
+    assert scc.main(["-v", str(tmp_path / "u.txt")]) == 0
+    assert re.fullmatch(
+        f"302\n  {re.escape(moved)}  \\d+ms  text/plain  -> /redirected\n",
+        capsys.readouterr().out,
+    )
+
+
 def test_main_reads_files_and_prints_groups(server, tmp_path: Path, capsys):
     ok = f"{server.url}/status/200"
     missing = f"{server.url}/status/404"
@@ -254,7 +322,7 @@ def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
     (tmp_path / "u.txt").write_text("http://a/\n", encoding="utf-8")
     calls = []
     monkeypatch.setattr(
-        scc, "classify", lambda urls, **kw: calls.append((urls, kw)) or {}
+        scc, "check_all", lambda urls, **kw: calls.append((urls, kw)) or []
     )
 
     assert scc.main(["--workers", "3", str(tmp_path / "u.txt")]) == 0

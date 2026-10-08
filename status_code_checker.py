@@ -16,8 +16,10 @@ import math
 import re
 import sys
 import threading
+import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -50,56 +52,83 @@ def is_valid_url(url: str) -> bool:
     return parts.scheme in {"http", "https"} and bool(parts.netloc)
 
 
-def check(session: requests.Session, url: str, timeout: float) -> str:
-    """URL 1 つを調べ、ステータスコード (文字列) かエラー種別を返します。"""
+@dataclass(frozen=True)
+class Result:
+    """URL 1 つの調査結果です。``group`` はステータスコードの文字列かエラー種別です。"""
+
+    url: str
+    group: str
+    status: int | None = None
+    location: str | None = None
+    content_type: str | None = None
+    elapsed_ms: int | None = None  # 応答ヘッダが届くまでの時間
+
+
+def check(session: requests.Session, url: str, timeout: float) -> Result:
+    """URL 1 つを調べます。本文はダウンロードしません。"""
     if not is_valid_url(url):
-        return INVALID_URL
+        return Result(url, INVALID_URL)
+    started = time.perf_counter()
     try:
         with session.get(
             url, allow_redirects=False, stream=True, timeout=timeout
         ) as response:
-            return str(response.status_code)
+            return Result(
+                url,
+                str(response.status_code),
+                response.status_code,
+                response.headers.get("Location"),
+                response.headers.get("Content-Type"),
+                _elapsed_ms(started),
+            )
     except requests.Timeout:
-        return TIMEOUT
+        group = TIMEOUT
     except requests.ConnectionError:
-        return CONNECTION_ERROR
+        group = CONNECTION_ERROR
     except requests.exceptions.InvalidURL:
-        return INVALID_URL
+        return Result(url, INVALID_URL)
     except requests.RequestException:
-        return ERROR
+        group = ERROR
+    return Result(url, group, elapsed_ms=_elapsed_ms(started))
 
 
-def classify(
+def _elapsed_ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
+
+
+def check_all(
     urls: Iterable[str], *, timeout: float = DEFAULT_TIMEOUT, workers: int = 1
-) -> dict[str, list[str]]:
-    """URL をステータスコード (またはエラー種別) ごとに分けます。
+) -> list[Result]:
+    """すべての URL を調べ、入力順の結果を返します。
 
     ``workers`` 本のスレッドで同時に調べますが、結果は入力順に並びます。
     """
     local = threading.local()
     sessions: list[requests.Session] = []
 
-    def check_with_thread_session(url: str) -> str:
+    def check_with_thread_session(url: str) -> Result:
         if not hasattr(local, "session"):
             local.session = requests.Session()
             local.session.headers["User-Agent"] = USER_AGENT
             sessions.append(local.session)
         return check(local.session, url, timeout)
 
-    urls = list(urls)
-    result: dict[str, list[str]] = {}
     try:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             # workers=1 ではスレッドを使わず、Ctrl-C がすぐ効くようにします。
             run = pool.map if workers > 1 else map
-            for url, group in zip(
-                urls, run(check_with_thread_session, urls), strict=True
-            ):
-                result.setdefault(group, []).append(url)
+            return list(run(check_with_thread_session, urls))
     finally:
         for session in sessions:
             session.close()
-    return result
+
+
+def group(results: Iterable[Result]) -> dict[str, list[Result]]:
+    """結果をステータスコード (またはエラー種別) ごとに分けます。"""
+    groups: dict[str, list[Result]] = {}
+    for result in results:
+        groups.setdefault(result.group, []).append(result)
+    return groups
 
 
 def matches(group: str, patterns: Iterable[str]) -> bool:
@@ -115,12 +144,25 @@ def _group_order(group: str) -> tuple[int, int | str]:
     return (0, int(group)) if group.isdigit() else (1, group)
 
 
-def format_result(result: dict[str, list[str]]) -> str:
+def _details(result: Result) -> list[str]:
+    details = []
+    if result.elapsed_ms is not None:
+        details.append(f"{result.elapsed_ms}ms")
+    if result.content_type is not None:
+        details.append(result.content_type)
+    if result.location is not None:
+        details.append(f"-> {result.location}")
+    return details
+
+
+def format_result(groups: dict[str, list[Result]], *, verbose: bool = False) -> str:
     """ステータスコード昇順、その後にエラー種別を並べて整形します。"""
     lines = []
-    for group in sorted(result, key=_group_order):
-        lines.append(group)
-        lines.extend(f"  {url}" for url in result[group])
+    for name in sorted(groups, key=_group_order):
+        lines.append(name)
+        for result in groups[name]:
+            details = _details(result) if verbose else []
+            lines.append("  ".join(["", result.url, *details]))
     return "\n".join(lines)
 
 
@@ -200,6 +242,12 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATTERNS",
         help="表示しないグループ (例: 200)",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="各 URL に応答時間、Content-Type、Location を添えます",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -209,29 +257,29 @@ def main(argv: list[str] | None = None) -> int:
     if not urls:
         parser.error("URL がありません。")
 
-    result = classify(urls, timeout=args.timeout, workers=args.workers)
+    groups = group(check_all(urls, timeout=args.timeout, workers=args.workers))
     shown = {
-        group: group_urls
-        for group, group_urls in result.items()
-        if (not args.only or matches(group, args.only))
-        and not matches(group, args.exclude)
+        name: results
+        for name, results in groups.items()
+        if (not args.only or matches(name, args.only))
+        and not matches(name, args.exclude)
     }
     if shown:
-        print(format_result(shown))
+        print(format_result(shown, verbose=args.verbose))
 
     unexpected = 0
     if args.expect is not None:
         unexpected = sum(
-            len(group_urls)
-            for group, group_urls in result.items()
-            if not matches(group, args.expect)
+            len(results)
+            for name, results in groups.items()
+            if not matches(name, args.expect)
         )
         if unexpected:
             print(
                 f"{unexpected} 件の URL が --expect に合いませんでした。",
                 file=sys.stderr,
             )
-    return 1 if unexpected or ERROR_GROUPS & result.keys() else 0
+    return 1 if unexpected or ERROR_GROUPS & groups.keys() else 0
 
 
 if __name__ == "__main__":

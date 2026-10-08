@@ -30,6 +30,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         if 300 <= code < 400:
             self.send_header("Location", "/redirected")
+        self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
