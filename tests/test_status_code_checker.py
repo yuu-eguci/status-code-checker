@@ -1,5 +1,6 @@
 import io
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,25 @@ def test_classify_groups_by_status_and_does_not_follow_redirects(server):
 def test_classify_keeps_input_order_within_a_group(server):
     urls = [f"{server.url}/status/200?n={n}" for n in ("b", "a", "c")]
     assert scc.classify(urls) == {"200": urls}
+
+
+def test_classify_workers_run_requests_in_parallel(server):
+    urls = [f"{server.url}/sleep?n={n}" for n in range(4)]
+
+    started = time.monotonic()
+    result = scc.classify(urls, timeout=5, workers=4)
+
+    assert time.monotonic() - started < 1.5  # 4 x 0.5 秒が直列なら 2 秒以上
+    assert result == {"200": urls}
+
+
+def test_classify_workers_keep_input_order_even_when_later_urls_finish_first(
+    server,
+):
+    slow = f"{server.url}/sleep"
+    fast = f"{server.url}/status/200"
+
+    assert scc.classify([slow, fast], timeout=5, workers=2) == {"200": [slow, fast]}
 
 
 def test_classify_reports_timeout_without_crashing(server):
@@ -127,6 +147,8 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--timeout", "-1", "-"], "timeout は 0 より大きい"),
         (["--timeout", "inf", "-"], "timeout は 0 より大きい"),
         (["--timeout", "nan", "-"], "timeout は 0 より大きい"),
+        (["--workers", "0", "-"], "workers は 1 以上"),
+        (["--workers", "1.5", "-"], "invalid"),
         (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )
@@ -139,6 +161,17 @@ def test_main_exits_2_on_usage_errors(argv, message, tmp_path: Path, capsys):
 
     assert exc.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
+    (tmp_path / "u.txt").write_text("http://a/\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        scc, "classify", lambda urls, **kw: calls.append((urls, kw)) or {}
+    )
+
+    assert scc.main(["--workers", "3", str(tmp_path / "u.txt")]) == 0
+    assert calls == [(["http://a/"], {"timeout": 10.0, "workers": 3})]
 
 
 def test_main_exits_2_when_no_urls(tmp_path: Path, capsys):

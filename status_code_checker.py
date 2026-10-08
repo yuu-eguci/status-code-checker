@@ -6,12 +6,16 @@
 
     $ python status_code_checker.py urls.txt
     $ cat urls.txt | python status_code_checker.py
+
+オプションの一覧は docs/options.md にあります。
 """
 
 import argparse
 import math
 import sys
+import threading
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -64,14 +68,35 @@ def check(session: requests.Session, url: str, timeout: float) -> str:
 
 
 def classify(
-    urls: Iterable[str], *, timeout: float = DEFAULT_TIMEOUT
+    urls: Iterable[str], *, timeout: float = DEFAULT_TIMEOUT, workers: int = 1
 ) -> dict[str, list[str]]:
-    """URL をステータスコード (またはエラー種別) ごとに分けます。"""
+    """URL をステータスコード (またはエラー種別) ごとに分けます。
+
+    ``workers`` 本のスレッドで同時に調べますが、結果は入力順に並びます。
+    """
+    local = threading.local()
+    sessions: list[requests.Session] = []
+
+    def check_with_thread_session(url: str) -> str:
+        if not hasattr(local, "session"):
+            local.session = requests.Session()
+            local.session.headers["User-Agent"] = USER_AGENT
+            sessions.append(local.session)
+        return check(local.session, url, timeout)
+
+    urls = list(urls)
     result: dict[str, list[str]] = {}
-    with requests.Session() as session:
-        session.headers["User-Agent"] = USER_AGENT
-        for url in urls:
-            result.setdefault(check(session, url, timeout), []).append(url)
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # workers=1 ではスレッドを使わず、Ctrl-C がすぐ効くようにします。
+            run = pool.map if workers > 1 else map
+            for url, group in zip(
+                urls, run(check_with_thread_session, urls), strict=True
+            ):
+                result.setdefault(group, []).append(url)
+    finally:
+        for session in sessions:
+            session.close()
     return result
 
 
@@ -101,6 +126,13 @@ def _positive_float(text: str) -> float:
     return value
 
 
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("workers は 1 以上の整数にしてください。")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -119,6 +151,12 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_TIMEOUT,
         help=f"1 URL あたりの接続・読み取りタイムアウト秒 (既定: {DEFAULT_TIMEOUT:g})",
     )
+    parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=1,
+        help="同時に調べる URL の数 (既定: 1)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -128,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     if not urls:
         parser.error("URL がありません。")
 
-    result = classify(urls, timeout=args.timeout)
+    result = classify(urls, timeout=args.timeout, workers=args.workers)
     print(format_result(result))
     return 1 if ERROR_GROUPS & result.keys() else 0
 

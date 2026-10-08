@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -14,13 +15,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self.server.hits.append(self.path)
-        if self.path == "/sleep":
+        path = urlsplit(self.path).path
+        if path == "/sleep":
             time.sleep(0.5)
             return self._respond(200)
-        if self.path == "/ua":
+        if path == "/ua":
             ua = self.headers.get("User-Agent", "")
             return self._respond(200 if ua == "status-code-checker" else 403)
-        match = re.fullmatch(r"/status/(\d{3})", self.path)
+        match = re.fullmatch(r"/status/(\d{3})", path)
         code = int(match.group(1)) if match else 200
         return self._respond(code)
 
