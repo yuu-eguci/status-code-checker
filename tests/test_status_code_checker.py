@@ -441,6 +441,18 @@ def test_main_diff_compares_with_a_saved_json_run(server, tmp_path: Path, capsys
     assert capsys.readouterr().out == ""
 
 
+def test_main_diff_ignores_filters_and_keeps_exit_code(server, tmp_path: Path, capsys):
+    ok = f"{server.url}/status/200"
+    (tmp_path / "last.json").write_text(
+        json.dumps({"schema": 1, "results": [{"url": ok, "group": "200"}]})
+    )
+    (tmp_path / "u.txt").write_text(f"{ok}\nnope\n", encoding="utf-8")
+    options = ["--diff", str(tmp_path / "last.json"), "--only", "200", "-v"]
+
+    assert scc.main([*options, str(tmp_path / "u.txt")]) == 1
+    assert capsys.readouterr().out == "ADDED\n  nope: INVALID_URL\n"
+
+
 def test_main_verbose_option(server, tmp_path: Path, capsys):
     moved = f"{server.url}/status/302"
     (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
@@ -514,7 +526,16 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--only", "200,", "-"], "不正なパターンです: ''"),
         (["--exclude", "timeout", "-"], "不正なパターンです: 'timeout'"),
         (["--format", "xml", "-"], "invalid choice: 'xml'"),
-        (["--diff", "/no/such/last.json", "-"], "last.json"),
+        (["--diff", "/no/such/last.json", "-"], "No such file or directory"),
+        (["--diff", "{tmp_path}/list.json", "-"], "schema が 1 ではありません"),
+        (
+            ["--diff", "{tmp_path}/noresults.json", "-"],
+            "--format json の出力ではありません",
+        ),
+        (
+            ["--diff", "{tmp_path}/nogroup.json", "-"],
+            "--format json の出力ではありません",
+        ),
         (["--diff", "{tmp_path}/binary.txt", "-"], "'utf-8' codec can't decode"),
         (["--diff", "{tmp_path}/schema2.json", "-"], "schema"),
         (["--diff", "{tmp_path}/schema2.json", "--format", "json", "-"], "text 形式"),
@@ -524,6 +545,9 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
 def test_main_exits_2_on_usage_errors(argv, message, tmp_path: Path, capsys):
     (tmp_path / "binary.txt").write_bytes(b"\xff\xfe\x00http://a/\n")
     (tmp_path / "schema2.json").write_text('{"schema": 2, "results": []}')
+    (tmp_path / "list.json").write_text("[]")
+    (tmp_path / "noresults.json").write_text('{"schema": 1}')
+    (tmp_path / "nogroup.json").write_text('{"schema": 1, "results": [{"url": "x"}]}')
     argv = [arg.format(tmp_path=tmp_path) for arg in argv]
 
     with pytest.raises(SystemExit) as exc:
