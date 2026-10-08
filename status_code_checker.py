@@ -11,7 +11,9 @@
 """
 
 import argparse
+import functools
 import math
+import re
 import sys
 import threading
 from collections.abc import Iterable
@@ -100,6 +102,15 @@ def classify(
     return result
 
 
+def matches(group: str, patterns: Iterable[str]) -> bool:
+    """グループが ``200`` / ``4xx`` / ``TIMEOUT`` 形式のパターンのどれかに合うか。"""
+    return any(
+        group == pattern
+        or (pattern.endswith("xx") and group.isdigit() and group[0] == pattern[0])
+        for pattern in patterns
+    )
+
+
 def _group_order(group: str) -> tuple[int, int | str]:
     return (0, int(group)) if group.isdigit() else (1, group)
 
@@ -124,6 +135,18 @@ def _positive_float(text: str) -> float:
     if not math.isfinite(value) or value <= 0:
         raise argparse.ArgumentTypeError("timeout は 0 より大きい秒数にしてください。")
     return value
+
+
+CODE_PATTERN = r"[0-9]{3}|[0-9]xx"
+GROUP_PATTERN = CODE_PATTERN + "|" + "|".join(sorted(ERROR_GROUPS))
+
+
+def _patterns(text: str, *, allowed: str) -> list[str]:
+    patterns = [pattern.strip() for pattern in text.split(",")]
+    for pattern in patterns:
+        if not re.fullmatch(allowed, pattern):
+            raise argparse.ArgumentTypeError(f"不正なパターンです: {pattern!r}")
+    return patterns
 
 
 def _positive_int(text: str) -> int:
@@ -157,6 +180,26 @@ def main(argv: list[str] | None = None) -> int:
         default=1,
         help="同時に調べる URL の数 (既定: 1)",
     )
+    parser.add_argument(
+        "--expect",
+        type=functools.partial(_patterns, allowed=CODE_PATTERN),
+        metavar="PATTERNS",
+        help="期待するコード (例: 200,3xx)。合わない URL があれば終了コード 1",
+    )
+    parser.add_argument(
+        "--only",
+        type=functools.partial(_patterns, allowed=GROUP_PATTERN),
+        default=[],
+        metavar="PATTERNS",
+        help="表示するグループ (例: 4xx,5xx,TIMEOUT)",
+    )
+    parser.add_argument(
+        "--exclude",
+        type=functools.partial(_patterns, allowed=GROUP_PATTERN),
+        default=[],
+        metavar="PATTERNS",
+        help="表示しないグループ (例: 200)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -167,8 +210,28 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("URL がありません。")
 
     result = classify(urls, timeout=args.timeout, workers=args.workers)
-    print(format_result(result))
-    return 1 if ERROR_GROUPS & result.keys() else 0
+    shown = {
+        group: group_urls
+        for group, group_urls in result.items()
+        if (not args.only or matches(group, args.only))
+        and not matches(group, args.exclude)
+    }
+    if shown:
+        print(format_result(shown))
+
+    unexpected = 0
+    if args.expect is not None:
+        unexpected = sum(
+            len(group_urls)
+            for group, group_urls in result.items()
+            if not matches(group, args.expect)
+        )
+        if unexpected:
+            print(
+                f"{unexpected} 件の URL が --expect に合いませんでした。",
+                file=sys.stderr,
+            )
+    return 1 if unexpected or ERROR_GROUPS & result.keys() else 0
 
 
 if __name__ == "__main__":

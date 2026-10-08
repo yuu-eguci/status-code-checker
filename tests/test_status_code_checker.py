@@ -101,6 +101,85 @@ def test_format_result_sorts_status_codes_then_error_groups():
     )
 
 
+@pytest.mark.parametrize(
+    ("group", "patterns", "expected"),
+    [
+        ("200", ["200"], True),
+        ("204", ["2xx"], True),
+        ("404", ["2xx", "404"], True),
+        ("301", ["3xx"], True),
+        ("404", ["4"], False),
+        ("404", ["2xx"], False),
+        ("200", ["2xx"], True),
+        ("TIMEOUT", ["TIMEOUT"], True),
+        ("TIMEOUT", ["2xx", "4xx"], False),
+        ("200", [], False),
+    ],
+)
+def test_matches(group, patterns, expected):
+    assert scc.matches(group, patterns) is expected
+
+
+def test_main_expect_exits_1_and_reports_count_when_a_url_does_not_match(
+    server, tmp_path: Path, capsys
+):
+    urls = [f"{server.url}/status/200", f"{server.url}/status/404"]
+    (tmp_path / "u.txt").write_text("\n".join(urls) + "\n", encoding="utf-8")
+
+    code = scc.main(["--expect", "2xx", str(tmp_path / "u.txt")])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    assert out == f"200\n  {urls[0]}\n404\n  {urls[1]}\n"
+    assert err == "1 件の URL が --expect に合いませんでした。\n"
+
+
+def test_main_expect_exits_0_when_all_urls_match(server, tmp_path: Path, capsys):
+    urls = [f"{server.url}/status/200", f"{server.url}/status/404"]
+    (tmp_path / "u.txt").write_text("\n".join(urls) + "\n", encoding="utf-8")
+
+    assert scc.main(["--expect", "2xx,404", str(tmp_path / "u.txt")]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_main_expect_never_matches_error_groups(closed_port, tmp_path: Path, capsys):
+    (tmp_path / "u.txt").write_text(f"http://127.0.0.1:{closed_port}/\n")
+
+    assert scc.main(["--expect", "2xx", str(tmp_path / "u.txt")]) == 1
+    assert "1 件" in capsys.readouterr().err
+
+
+def test_main_expect_counts_hidden_urls_too(server, tmp_path: Path, capsys):
+    ok = f"{server.url}/status/200"
+    missing = [f"{server.url}/status/404", f"{server.url}/status/410"]
+    (tmp_path / "u.txt").write_text("\n".join([ok, *missing]) + "\n", encoding="utf-8")
+
+    code = scc.main(["--expect", "2xx", "--only", "2xx", str(tmp_path / "u.txt")])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    assert out == f"200\n  {ok}\n"
+    assert err == "2 件の URL が --expect に合いませんでした。\n"
+
+
+def test_main_only_and_exclude_filter_display_but_not_exit_code(
+    server, closed_port, tmp_path: Path, capsys
+):
+    ok = f"{server.url}/status/200"
+    missing = f"{server.url}/status/404"
+    down = f"http://127.0.0.1:{closed_port}/"
+    (tmp_path / "u.txt").write_text(f"{ok}\n{missing}\n{down}\n", encoding="utf-8")
+
+    assert scc.main(["--only", "2xx,4xx", str(tmp_path / "u.txt")]) == 1
+    assert capsys.readouterr().out == f"200\n  {ok}\n404\n  {missing}\n"
+
+    assert scc.main(["--exclude", "CONNECTION_ERROR,200", str(tmp_path / "u.txt")]) == 1
+    assert capsys.readouterr().out == f"404\n  {missing}\n"
+
+    assert scc.main(["--only", "4xx", "--exclude", "404", str(tmp_path / "u.txt")]) == 1
+    assert capsys.readouterr().out == ""
+
+
 def test_main_reads_files_and_prints_groups(server, tmp_path: Path, capsys):
     ok = f"{server.url}/status/200"
     missing = f"{server.url}/status/404"
@@ -149,6 +228,14 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--timeout", "nan", "-"], "timeout は 0 より大きい"),
         (["--workers", "0", "-"], "workers は 1 以上"),
         (["--workers", "1.5", "-"], "invalid"),
+        (["--expect", "2x", "-"], "不正なパターンです: '2x'"),
+        (["--expect", "2XX", "-"], "不正なパターンです: '2XX'"),
+        (["--expect", "２００", "-"], "不正なパターンです: '２００'"),  # noqa: RUF001
+        (["--expect", "", "-"], "不正なパターンです: ''"),
+        (["--expect", "200,TIMEOUT", "-"], "不正なパターンです: 'TIMEOUT'"),
+        (["--only", "20", "-"], "不正なパターンです: '20'"),
+        (["--only", "200,", "-"], "不正なパターンです: ''"),
+        (["--exclude", "timeout", "-"], "不正なパターンです: 'timeout'"),
         (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )
