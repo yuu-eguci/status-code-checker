@@ -9,6 +9,7 @@
 """
 
 import argparse
+import math
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -95,7 +96,7 @@ def _read(name: str) -> str:
 
 def _positive_float(text: str) -> float:
     value = float(text)
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         raise argparse.ArgumentTypeError("timeout は 0 より大きい秒数にしてください。")
     return value
 
@@ -122,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         urls = parse_urls("\n".join(_read(name) for name in args.files or ["-"]))
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         parser.error(str(exc))
     if not urls:
         parser.error("URL がありません。")

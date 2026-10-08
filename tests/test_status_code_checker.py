@@ -122,12 +122,18 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
 @pytest.mark.parametrize(
     ("argv", "message"),
     [
-        (["/no/such/file.txt"], "file.txt"),
-        (["--timeout", "0", "-"], "timeout"),
-        (["--timeout", "-1", "-"], "timeout"),
+        (["/no/such/file.txt"], "No such file or directory: '/no/such/file.txt'"),
+        (["--timeout", "0", "-"], "timeout は 0 より大きい"),
+        (["--timeout", "-1", "-"], "timeout は 0 より大きい"),
+        (["--timeout", "inf", "-"], "timeout は 0 より大きい"),
+        (["--timeout", "nan", "-"], "timeout は 0 より大きい"),
+        (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )
-def test_main_exits_2_on_usage_errors(argv, message, capsys):
+def test_main_exits_2_on_usage_errors(argv, message, tmp_path: Path, capsys):
+    (tmp_path / "binary.txt").write_bytes(b"\xff\xfe\x00http://a/\n")
+    argv = [arg.format(tmp_path=tmp_path) for arg in argv]
+
     with pytest.raises(SystemExit) as exc:
         scc.main(argv)
 

@@ -34,7 +34,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - 応答がない URL はクラッシュせず `TIMEOUT` / `CONNECTION_ERROR` / `INVALID_URL` / `ERROR` のグループに入ります。
 - `--timeout 秒` で 1 URL あたりのタイムアウトを変えられます (既定 10 秒)。
 - User-Agent は `status-code-checker` で送ります。
-- 終了コードは、全部応答があれば 0、エラーグループがあれば 1、URL が 1 つもなければ 2 です。
+- 終了コードは、全部応答があれば 0、エラーグループがあれば 1、使い方の誤り (URL なし、読めないファイル、不正な `--timeout`) なら 2 です。
 
 ## 開発
 
