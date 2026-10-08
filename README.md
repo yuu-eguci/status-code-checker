@@ -43,4 +43,6 @@ docker compose run --rm test   # pytest (ローカルの HTTP フィクスチャ
 docker compose run --rm lint   # ruff check + ruff format --check
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) でも同じ lint とテストを回します。
+
 ![1](media/STATUSCODE.jpg)
