@@ -129,6 +129,17 @@ def test_check_all_reports_invalid_urls_without_requesting(server):
     assert server.hits == []
 
 
+def test_header_option_splits_on_first_colon_and_strips():
+    assert scc._header(" Authorization : Basic a:b ") == ("Authorization", "Basic a:b")
+
+
+def test_check_all_sends_extra_headers(server):
+    url = f"{server.url}/need-auth"
+
+    assert classify([url]) == {"401": [url]}
+    assert classify([url], headers={"Authorization": "Bearer secret"}) == {"200": [url]}
+
+
 def test_check_all_sends_identifying_user_agent(server):
     url = f"{server.url}/ua"
     assert classify([url]) == {"200": [url]}
@@ -436,6 +447,10 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--workers", "0", "-"], "workers は 1 以上"),
         (["--workers", "1.5", "-"], "invalid"),
         (["--retry", "-1", "-"], "retry は 0 以上"),
+        (["--header", "nocolon", "-"], "不正なヘッダです: 'nocolon'"),
+        (["--header", ": value", "-"], "不正なヘッダです: ': value'"),
+        (["--header", "X: a\nb", "-"], "不正なヘッダです"),
+        (["--header", "X: 日本", "-"], "不正なヘッダです"),
         (["--expect", "2x", "-"], "不正なパターンです: '2x'"),
         (["--expect", "2XX", "-"], "不正なパターンです: '2XX'"),
         (["--expect", "２００", "-"], "不正なパターンです: '２００'"),  # noqa: RUF001
@@ -459,6 +474,22 @@ def test_main_exits_2_on_usage_errors(argv, message, tmp_path: Path, capsys):
     assert message in capsys.readouterr().err
 
 
+def test_main_header_option_is_repeatable_and_can_override_user_agent(
+    server, tmp_path: Path, capsys
+):
+    auth = f"{server.url}/need-auth"
+    ua = f"{server.url}/ua"
+    (tmp_path / "u.txt").write_text(f"{auth}\n{ua}\n", encoding="utf-8")
+    headers = [
+        *["--header", "Authorization: Bearer wrong"],
+        *["--header", "Authorization: Bearer secret"],
+        *["--header", "User-Agent:x"],
+    ]
+
+    assert scc.main([*headers, str(tmp_path / "u.txt")]) == 0
+    assert capsys.readouterr().out == f"200\n  {auth}\n403\n  {ua}\n"
+
+
 def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
     (tmp_path / "u.txt").write_text("http://a/\n", encoding="utf-8")
     calls = []
@@ -467,7 +498,9 @@ def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
     )
 
     assert scc.main(["--workers", "3", "--retry", "2", str(tmp_path / "u.txt")]) == 0
-    assert calls == [(["http://a/"], {"timeout": 10.0, "workers": 3, "retry": 2})]
+    assert calls == [
+        (["http://a/"], {"timeout": 10.0, "workers": 3, "retry": 2, "headers": {}})
+    ]
 
 
 def test_main_exits_2_when_no_urls(tmp_path: Path, capsys):

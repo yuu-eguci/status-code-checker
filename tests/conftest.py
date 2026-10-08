@@ -26,6 +26,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if path == "/sleep":
             time.sleep(0.5)
             return self._respond(200)
+        if path == "/need-auth":
+            authorized = self.headers.get("Authorization") == "Bearer secret"
+            return self._respond(200 if authorized else 401)
         if path == "/ua":
             ua = self.headers.get("User-Agent", "")
             return self._respond(200 if ua == "status-code-checker" else 403)

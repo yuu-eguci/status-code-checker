@@ -20,7 +20,7 @@ import re
 import sys
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, astuple, dataclass, fields
 from pathlib import Path
@@ -118,6 +118,7 @@ def check_all(
     timeout: float = DEFAULT_TIMEOUT,
     workers: int = 1,
     retry: int = 0,
+    headers: Mapping[str, str] | None = None,
 ) -> list[Result]:
     """すべての URL を調べ、入力順の結果を返します。
 
@@ -130,6 +131,7 @@ def check_all(
         if not hasattr(local, "session"):
             local.session = requests.Session()
             local.session.headers["User-Agent"] = USER_AGENT
+            local.session.headers.update(headers or {})
             sessions.append(local.session)
         return check(local.session, url, timeout, retry)
 
@@ -226,6 +228,19 @@ def _patterns(text: str, *, allowed: str) -> list[str]:
     return patterns
 
 
+def _header(text: str) -> tuple[str, str]:
+    name, colon, value = text.partition(":")
+    if (
+        not colon
+        or not name.strip()
+        or not text.isascii()
+        or "\n" in text
+        or "\r" in text
+    ):
+        raise argparse.ArgumentTypeError(f"不正なヘッダです: {text!r}")
+    return name.strip(), value.strip()
+
+
 def _int_at_least(text: str, *, minimum: int, name: str) -> int:
     value = int(text)
     if value < minimum:
@@ -264,6 +279,14 @@ def main(argv: list[str] | None = None) -> int:
         type=functools.partial(_int_at_least, minimum=0, name="retry"),
         default=0,
         help="一時的なエラーになった URL を調べ直す回数 (既定: 0)",
+    )
+    parser.add_argument(
+        "--header",
+        type=_header,
+        action="append",
+        default=[],
+        metavar="'NAME: VALUE'",
+        help="すべてのリクエストに付けるヘッダ (複数可)",
     )
     parser.add_argument(
         "--expect",
@@ -307,7 +330,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("URL がありません。")
 
     results = check_all(
-        urls, timeout=args.timeout, workers=args.workers, retry=args.retry
+        urls,
+        timeout=args.timeout,
+        workers=args.workers,
+        retry=args.retry,
+        headers=dict(args.header),
     )
     shown = [
         result

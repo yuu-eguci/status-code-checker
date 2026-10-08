@@ -41,6 +41,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - `--format json` や `--format csv` で機械可読な出力にできます。
 - オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
 - User-Agent は `status-code-checker` で送ります。
+- `--header 'Authorization: Bearer xxx'` で送るヘッダを足せます (複数可)。ログインが要るページの確認に使えます。
 - 終了コードは、全部応答があれば 0、エラーグループがあれば 1、`--expect` に合わない URL があっても 1、使い方の誤り (URL なし、読めないファイル、不正なオプション値) なら 2 です。
 
 ## 開発
