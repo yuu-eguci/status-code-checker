@@ -1,0 +1,12 @@
+services:
+  app: &app
+    build: .
+    image: status-code-checker
+    volumes:
+      - .:/app
+  test:
+    <<: *app
+    entrypoint: pytest
+  lint:
+    <<: *app
+    entrypoint: sh -c "ruff check . && ruff format --check ."
