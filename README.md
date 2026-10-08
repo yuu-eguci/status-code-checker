@@ -37,6 +37,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - `--expect 200,3xx` のように期待するコードを指定すると、合わない URL があれば終了コード 1 になります (CI 向け)。
 - `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
+- `--format json` や `--format csv` で機械可読な出力にできます。
 - オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
 - User-Agent は `status-code-checker` で送ります。
 - 終了コードは、全部応答があれば 0、エラーグループがあれば 1、`--expect` に合わない URL があっても 1、使い方の誤り (URL なし、読めないファイル、不正なオプション値) なら 2 です。

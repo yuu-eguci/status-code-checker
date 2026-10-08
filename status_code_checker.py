@@ -11,7 +11,10 @@
 """
 
 import argparse
+import csv
 import functools
+import io
+import json
 import math
 import re
 import sys
@@ -19,7 +22,7 @@ import threading
 import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, astuple, dataclass, fields
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -166,6 +169,21 @@ def format_result(groups: dict[str, list[Result]], *, verbose: bool = False) -> 
     return "\n".join(lines)
 
 
+def format_json(results: Iterable[Result]) -> str:
+    """入力順に 1 URL 1 レコードの JSON にします (docs/options.md 参照)。"""
+    payload = {"schema": 1, "results": [asdict(result) for result in results]}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def format_csv(results: Iterable[Result]) -> str:
+    """見出し行付きの CSV にします。分からない項目は空欄です。"""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(field.name for field in fields(Result))
+    writer.writerows(astuple(result) for result in results)
+    return buffer.getvalue()
+
+
 def _read(name: str) -> str:
     if name == "-":
         return sys.stdin.read()
@@ -248,6 +266,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="各 URL に応答時間、Content-Type、Location を添えます",
     )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json", "csv"],
+        default="text",
+        help="出力形式 (既定: text)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -257,29 +281,32 @@ def main(argv: list[str] | None = None) -> int:
     if not urls:
         parser.error("URL がありません。")
 
-    groups = group(check_all(urls, timeout=args.timeout, workers=args.workers))
-    shown = {
-        name: results
-        for name, results in groups.items()
-        if (not args.only or matches(name, args.only))
-        and not matches(name, args.exclude)
-    }
-    if shown:
-        print(format_result(shown, verbose=args.verbose))
+    results = check_all(urls, timeout=args.timeout, workers=args.workers)
+    shown = [
+        result
+        for result in results
+        if (not args.only or matches(result.group, args.only))
+        and not matches(result.group, args.exclude)
+    ]
+    if args.format == "json":
+        print(format_json(shown))
+    elif args.format == "csv":
+        print(format_csv(shown), end="")
+    elif shown:
+        print(format_result(group(shown), verbose=args.verbose))
 
     unexpected = 0
     if args.expect is not None:
         unexpected = sum(
-            len(results)
-            for name, results in groups.items()
-            if not matches(name, args.expect)
+            1 for result in results if not matches(result.group, args.expect)
         )
         if unexpected:
             print(
                 f"{unexpected} 件の URL が --expect に合いませんでした。",
                 file=sys.stderr,
             )
-    return 1 if unexpected or ERROR_GROUPS & groups.keys() else 0
+    failed = any(result.group in ERROR_GROUPS for result in results)
+    return 1 if unexpected or failed else 0
 
 
 if __name__ == "__main__":

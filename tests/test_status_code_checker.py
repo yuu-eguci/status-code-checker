@@ -1,4 +1,5 @@
 import io
+import json
 import re
 import sys
 import time
@@ -237,6 +238,108 @@ def test_format_result_verbose_appends_known_metadata():
     )
 
 
+SAMPLE_RESULTS = [
+    scc.Result("http://a/", "200", status=200, content_type="text/html", elapsed_ms=12),
+    scc.Result("http://m/", "301", status=301, location="/new", elapsed_ms=7),
+    scc.Result("http://t/", "TIMEOUT", elapsed_ms=10002),
+    scc.Result("nope", "INVALID_URL"),
+    scc.Result('http://q/?a=1,2&b="x"', "200", status=200),
+]
+
+
+def test_format_json_keeps_input_order_and_nulls():
+    assert json.loads(scc.format_json(SAMPLE_RESULTS)) == {
+        "schema": 1,
+        "results": [
+            {
+                "url": "http://a/",
+                "group": "200",
+                "status": 200,
+                "location": None,
+                "content_type": "text/html",
+                "elapsed_ms": 12,
+            },
+            {
+                "url": "http://m/",
+                "group": "301",
+                "status": 301,
+                "location": "/new",
+                "content_type": None,
+                "elapsed_ms": 7,
+            },
+            {
+                "url": "http://t/",
+                "group": "TIMEOUT",
+                "status": None,
+                "location": None,
+                "content_type": None,
+                "elapsed_ms": 10002,
+            },
+            {
+                "url": "nope",
+                "group": "INVALID_URL",
+                "status": None,
+                "location": None,
+                "content_type": None,
+                "elapsed_ms": None,
+            },
+            {
+                "url": 'http://q/?a=1,2&b="x"',
+                "group": "200",
+                "status": 200,
+                "location": None,
+                "content_type": None,
+                "elapsed_ms": None,
+            },
+        ],
+    }
+    assert json.loads(scc.format_json([])) == {"schema": 1, "results": []}
+
+
+def test_format_csv_has_header_and_blank_cells():
+    assert scc.format_csv(SAMPLE_RESULTS) == (
+        "url,group,status,location,content_type,elapsed_ms\n"
+        "http://a/,200,200,,text/html,12\n"
+        "http://m/,301,301,/new,,7\n"
+        "http://t/,TIMEOUT,,,,10002\n"
+        "nope,INVALID_URL,,,,\n"
+        '"http://q/?a=1,2&b=""x""",200,200,,,\n'
+    )
+    assert scc.format_csv([]) == "url,group,status,location,content_type,elapsed_ms\n"
+
+
+def test_main_format_json_applies_filters_and_expect(
+    server, closed_port, tmp_path: Path, capsys
+):
+    ok = f"{server.url}/status/200"
+    missing = f"{server.url}/status/404"
+    down = f"http://127.0.0.1:{closed_port}/"
+    (tmp_path / "u.txt").write_text(f"{ok}\n{missing}\n{down}\n", encoding="utf-8")
+
+    options = ["--format", "json", "--exclude", "CONNECTION_ERROR", "--expect", "2xx"]
+    code = scc.main([*options, str(tmp_path / "u.txt")])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    assert err == "2 件の URL が --expect に合いませんでした。\n"
+    assert [(r["url"], r["status"]) for r in json.loads(out)["results"]] == [
+        (ok, 200),
+        (missing, 404),
+    ]
+
+
+def test_main_format_csv(server, tmp_path: Path, capsys):
+    moved = f"{server.url}/status/301"
+    (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
+
+    assert scc.main(["--format", "csv", str(tmp_path / "u.txt")]) == 0
+    assert re.fullmatch(
+        "url,group,status,location,content_type,elapsed_ms\n"
+        f"{re.escape(moved)},301,301,/redirected,text/plain,\\d+\n",
+        capsys.readouterr().out,
+    )
+
+
 def test_main_verbose_option(server, tmp_path: Path, capsys):
     moved = f"{server.url}/status/302"
     (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
@@ -304,6 +407,7 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--only", "20", "-"], "不正なパターンです: '20'"),
         (["--only", "200,", "-"], "不正なパターンです: ''"),
         (["--exclude", "timeout", "-"], "不正なパターンです: 'timeout'"),
+        (["--format", "xml", "-"], "invalid choice: 'xml'"),
         (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )

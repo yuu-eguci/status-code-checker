@@ -4,7 +4,7 @@
 ```
 python status_code_checker.py [--timeout 秒] [--workers 数]
                               [--expect パターン] [--only パターン] [--exclude パターン]
-                              [-v] [FILE ...]
+                              [-v] [--format {text,json,csv}] [FILE ...]
 ```
 
 | オプション | 既定 | 説明 |
@@ -16,6 +16,7 @@ python status_code_checker.py [--timeout 秒] [--workers 数]
 | `--only パターン` | なし | 指定したグループだけを表示します。 |
 | `--exclude パターン` | なし | 指定したグループを表示から外します。`--only` と同時に指定すると両方が適用されます。 |
 | `-v`, `--verbose` | オフ | 各 URL の行に、応答ヘッダが届くまでの時間 (ms)、Content-Type、Location を 2 つの空白区切りで添えます。分からない項目は省きます。 |
+| `--format 形式` | `text` | `json` か `csv` にすると、グループ分けせず入力順に 1 URL 1 レコードで出します。`--only` / `--exclude` は効きます。`-v` は無視します (常に全項目を出します)。 |
 
 `-v` の出力例です。本文はダウンロードしないので、時間は応答ヘッダが届くまでの時間です (エラーの場合は諦めるまでの時間)。
 
@@ -41,6 +42,39 @@ TIMEOUT
 | グループ名 | エラーグループ (`--only` / `--exclude` のみ) | `TIMEOUT`, `CONNECTION_ERROR`, `INVALID_URL`, `ERROR` |
 
 書き方が違うパターンは使い方の誤り (終了コード 2) です。
+
+## JSON / CSV の項目
+
+| 項目 | 内容 |
+|---|---|
+| `url` | 入力した URL です。 |
+| `group` | テキスト出力の見出しと同じ文字列です (`"200"`, `"TIMEOUT"` など)。 |
+| `status` | ステータスコードの数値です。応答がなければ `null` です。 |
+| `location` | Location ヘッダです。なければ `null` です。 |
+| `content_type` | Content-Type ヘッダです。なければ `null` です。 |
+| `elapsed_ms` | 応答ヘッダが届くまで (エラーなら諦めるまで) の時間 (ms) です。`INVALID_URL` では `null` です。 |
+
+JSON は `{"schema": 1, "results": [...]}` の形です。`schema` は項目の形が変わったときに増やします。
+
+```json
+{
+  "schema": 1,
+  "results": [
+    {
+      "url": "https://example.com/",
+      "group": "200",
+      "status": 200,
+      "location": null,
+      "content_type": "text/html",
+      "elapsed_ms": 38
+    }
+  ]
+}
+```
+
+CSV は 1 行目が見出し (`url,group,status,location,content_type,elapsed_ms`) です。JSON で `null` の項目は CSV では空欄です。
+
+表示する URL がなければ、JSON は `results` が空配列、CSV は見出し行だけになります。
 
 ## 終了コード
 
