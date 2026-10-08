@@ -2,7 +2,7 @@
 ===
 
 ```
-python status_code_checker.py [--timeout 秒] [--workers 数]
+python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
                               [--expect パターン] [--only パターン] [--exclude パターン]
                               [-v] [--format {text,json,csv}] [FILE ...]
 ```
@@ -12,6 +12,7 @@ python status_code_checker.py [--timeout 秒] [--workers 数]
 | `FILE ...` | 標準入力 | 1 行 1 URL のファイル。複数可。`-` は標準入力です。 |
 | `--timeout 秒` | `10` | 1 URL あたりの接続・読み取りタイムアウトです。0 より大きい有限の数を指定します。 |
 | `--workers 数` | `1` | 同時に調べる URL の数です。1 以上の整数を指定します。増やしても出力は入力順のままです。 |
+| `--retry 回数` | `0` | `TIMEOUT` / `CONNECTION_ERROR` / `ERROR` になった URL を、応答があるまで最大その回数だけ調べ直します。0 以上の整数を指定します。4xx や 5xx は応答なので調べ直しません。`-v` などの時間は最後の試行のものです。 |
 | `--expect パターン` | なし | 期待するステータスコードです。合わない URL が 1 つでもあれば、その件数を標準エラーに出して終了コード 1 になります。エラーグループは常に「合わない」扱いで、パターンにはコードのみ指定できます。出力は変わりません。 |
 | `--only パターン` | なし | 指定したグループだけを表示します。 |
 | `--exclude パターン` | なし | 指定したグループを表示から外します。`--only` と同時に指定すると両方が適用されます。 |
@@ -52,7 +53,7 @@ TIMEOUT
 | `status` | ステータスコードの数値です。応答がなければ `null` です。 |
 | `location` | Location ヘッダです。なければ `null` です。 |
 | `content_type` | Content-Type ヘッダです。なければ `null` です。 |
-| `elapsed_ms` | 応答ヘッダが届くまで (エラーなら諦めるまで) の時間 (ms) です。`INVALID_URL` では `null` です。 |
+| `elapsed_ms` | 応答ヘッダが届くまで (エラーなら諦めるまで) の時間 (ms) です。`--retry` 時は最後の試行の時間で、`INVALID_URL` では `null` です。 |
 
 JSON は `{"schema": 1, "results": [...]}` の形です。`schema` は項目の形が変わったときに増やします。
 

@@ -36,6 +36,7 @@ CONNECTION_ERROR = "CONNECTION_ERROR"
 INVALID_URL = "INVALID_URL"
 ERROR = "ERROR"
 ERROR_GROUPS = {TIMEOUT, CONNECTION_ERROR, INVALID_URL, ERROR}
+RETRY_GROUPS = ERROR_GROUPS - {INVALID_URL}  # 調べ直しても意味がないものは除く
 
 
 def parse_urls(text: str) -> list[str]:
@@ -67,8 +68,20 @@ class Result:
     elapsed_ms: int | None = None  # 応答ヘッダが届くまでの時間
 
 
-def check(session: requests.Session, url: str, timeout: float) -> Result:
-    """URL 1 つを調べます。本文はダウンロードしません。"""
+def check(
+    session: requests.Session, url: str, timeout: float, retry: int = 0
+) -> Result:
+    """URL 1 つを調べます。一時的なエラーなら ``retry`` 回まで調べ直します。"""
+    result = _check_once(session, url, timeout)
+    for _ in range(retry):
+        if result.group not in RETRY_GROUPS:
+            break
+        result = _check_once(session, url, timeout)
+    return result
+
+
+def _check_once(session: requests.Session, url: str, timeout: float) -> Result:
+    """URL 1 つを 1 回だけ調べます。本文はダウンロードしません。"""
     if not is_valid_url(url):
         return Result(url, INVALID_URL)
     started = time.perf_counter()
@@ -100,7 +113,11 @@ def _elapsed_ms(started: float) -> int:
 
 
 def check_all(
-    urls: Iterable[str], *, timeout: float = DEFAULT_TIMEOUT, workers: int = 1
+    urls: Iterable[str],
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+    workers: int = 1,
+    retry: int = 0,
 ) -> list[Result]:
     """すべての URL を調べ、入力順の結果を返します。
 
@@ -114,7 +131,7 @@ def check_all(
             local.session = requests.Session()
             local.session.headers["User-Agent"] = USER_AGENT
             sessions.append(local.session)
-        return check(local.session, url, timeout)
+        return check(local.session, url, timeout, retry)
 
     try:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -209,10 +226,12 @@ def _patterns(text: str, *, allowed: str) -> list[str]:
     return patterns
 
 
-def _positive_int(text: str) -> int:
+def _int_at_least(text: str, *, minimum: int, name: str) -> int:
     value = int(text)
-    if value < 1:
-        raise argparse.ArgumentTypeError("workers は 1 以上の整数にしてください。")
+    if value < minimum:
+        raise argparse.ArgumentTypeError(
+            f"{name} は {minimum} 以上の整数にしてください。"
+        )
     return value
 
 
@@ -236,9 +255,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--workers",
-        type=_positive_int,
+        type=functools.partial(_int_at_least, minimum=1, name="workers"),
         default=1,
         help="同時に調べる URL の数 (既定: 1)",
+    )
+    parser.add_argument(
+        "--retry",
+        type=functools.partial(_int_at_least, minimum=0, name="retry"),
+        default=0,
+        help="一時的なエラーになった URL を調べ直す回数 (既定: 0)",
     )
     parser.add_argument(
         "--expect",
@@ -281,7 +306,9 @@ def main(argv: list[str] | None = None) -> int:
     if not urls:
         parser.error("URL がありません。")
 
-    results = check_all(urls, timeout=args.timeout, workers=args.workers)
+    results = check_all(
+        urls, timeout=args.timeout, workers=args.workers, retry=args.retry
+    )
     shown = [
         result
         for result in results

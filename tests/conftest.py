@@ -16,6 +16,13 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self.server.hits.append(self.path)
         path = urlsplit(self.path).path
+        if path.startswith("/flaky/"):
+            # 最初の n 回は応答せずに切断し、その後は 200 を返します。
+            self.server.attempts[path] = self.server.attempts.get(path, 0) + 1
+            if self.server.attempts[path] <= int(path.rsplit("/", 1)[1]):
+                self.close_connection = True
+                return None
+            return self._respond(200)
         if path == "/sleep":
             time.sleep(0.5)
             return self._respond(200)
@@ -44,6 +51,7 @@ class FixtureServer(ThreadingHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), FixtureHandler)
         self.hits: list[str] = []
+        self.attempts: dict[str, int] = {}
 
     @property
     def url(self) -> str:

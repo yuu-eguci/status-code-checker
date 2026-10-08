@@ -66,6 +66,42 @@ def test_check_all_workers_keep_input_order_even_when_later_urls_finish_first(
     assert classify([slow, fast], timeout=5, workers=2) == {"200": [slow, fast]}
 
 
+def test_check_all_retries_transient_errors_up_to_the_given_count(server):
+    flaky = f"{server.url}/flaky/2"
+
+    assert classify([flaky], retry=1) == {"CONNECTION_ERROR": [flaky]}
+    assert server.hits.count("/flaky/2") == 2
+
+    server.attempts.clear()
+    server.hits.clear()
+    assert classify([flaky], retry=2) == {"200": [flaky]}
+    assert server.hits.count("/flaky/2") == 3
+
+
+def test_check_all_stops_retrying_once_a_response_arrives(server):
+    flaky = f"{server.url}/flaky/1"
+
+    assert classify([flaky], retry=3) == {"200": [flaky]}
+    assert server.hits.count("/flaky/1") == 2
+
+
+def test_check_all_retries_timeouts(server):
+    slow = f"{server.url}/sleep"
+
+    assert classify([slow], timeout=0.1, retry=1) == {"TIMEOUT": [slow]}
+    assert server.hits.count("/sleep") == 2
+
+
+def test_check_all_does_not_retry_responses_or_invalid_urls(server):
+    failing = f"{server.url}/status/503"
+
+    assert classify([failing, "nope"], retry=3) == {
+        "503": [failing],
+        "INVALID_URL": ["nope"],
+    }
+    assert server.hits == ["/status/503"]
+
+
 def test_check_all_reports_timeout_without_crashing(server):
     urls = [f"{server.url}/sleep", f"{server.url}/status/200"]
     results = scc.check_all(urls, timeout=0.1)
@@ -399,6 +435,7 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--timeout", "nan", "-"], "timeout は 0 より大きい"),
         (["--workers", "0", "-"], "workers は 1 以上"),
         (["--workers", "1.5", "-"], "invalid"),
+        (["--retry", "-1", "-"], "retry は 0 以上"),
         (["--expect", "2x", "-"], "不正なパターンです: '2x'"),
         (["--expect", "2XX", "-"], "不正なパターンです: '2XX'"),
         (["--expect", "２００", "-"], "不正なパターンです: '２００'"),  # noqa: RUF001
@@ -429,8 +466,8 @@ def test_main_passes_workers_option(monkeypatch, tmp_path: Path, capsys):
         scc, "check_all", lambda urls, **kw: calls.append((urls, kw)) or []
     )
 
-    assert scc.main(["--workers", "3", str(tmp_path / "u.txt")]) == 0
-    assert calls == [(["http://a/"], {"timeout": 10.0, "workers": 3})]
+    assert scc.main(["--workers", "3", "--retry", "2", str(tmp_path / "u.txt")]) == 0
+    assert calls == [(["http://a/"], {"timeout": 10.0, "workers": 3, "retry": 2})]
 
 
 def test_main_exits_2_when_no_urls(tmp_path: Path, capsys):

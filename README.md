@@ -34,6 +34,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - 応答がない URL はクラッシュせず `TIMEOUT` / `CONNECTION_ERROR` / `INVALID_URL` / `ERROR` のグループに入ります。
 - `--timeout 秒` で 1 URL あたりのタイムアウトを変えられます (既定 10 秒)。
 - `--workers 数` で同時に調べる URL の数を増やせます (既定 1)。出力の順番は変わりません。
+- `--retry 回数` で `TIMEOUT` / `CONNECTION_ERROR` / `ERROR` になった URL をその回数まで調べ直します (既定 0)。
 - `--expect 200,3xx` のように期待するコードを指定すると、合わない URL があれば終了コード 1 になります (CI 向け)。
 - `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
