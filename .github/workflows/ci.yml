@@ -16,6 +16,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+      - run: uv run status-code-checker --version
 
   docker:
     runs-on: ubuntu-latest

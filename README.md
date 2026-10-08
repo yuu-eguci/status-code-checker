@@ -26,6 +26,12 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
   https://example.com/nothing
 ```
 
+Docker を使わないなら、uv があればこれだけで動きます。
+
+```bash
+uvx --from git+https://github.com/yuu-eguci/status-code-checker status-code-checker urls.txt
+```
+
 ## 使い方
 
 - 入力は 1 行 1 URL です。空行と `#` で始まる行は無視し、重複は 1 回だけ調べます。
@@ -40,6 +46,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
 - `--format json` や `--format csv` で機械可読な出力にできます。
 - `--format json` の結果を保存しておけば、`--diff 前回.json` で前回からの変化 (CHANGED / ADDED / REMOVED) だけを表示できます。
+- `--version` でバージョンを表示します。
 - オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
 - User-Agent は `status-code-checker` で送ります。
 - `--header 'Authorization: Bearer xxx'` で送るヘッダを足せます (複数可)。ログインが要るページの確認に使えます。

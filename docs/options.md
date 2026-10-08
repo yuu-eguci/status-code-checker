@@ -6,11 +6,14 @@ python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
                               [--header '名前: 値']
                               [--expect パターン] [--only パターン] [--exclude パターン]
                               [-v] [--format {text,json,csv}] [--diff 前回.json]
-                              [FILE ...]
+                              [--version] [FILE ...]
 ```
+
+`uvx --from git+https://github.com/yuu-eguci/status-code-checker status-code-checker` や、`uv sync` 後の `uv run status-code-checker` でも同じオプションで動きます。
 
 | オプション | 既定 | 説明 |
 |---|---|---|
+| `--version` | - | バージョンを表示して終了します。 |
 | `FILE ...` | 標準入力 | 1 行 1 URL のファイル。複数可。`-` は標準入力です。 |
 | `--timeout 秒` | `10` | 1 URL あたりの接続・読み取りタイムアウトです。0 より大きい有限の数を指定します。 |
 | `--workers 数` | `1` | 同時に調べる URL の数です。1 以上の整数を指定します。増やしても出力は入力順のままです。 |

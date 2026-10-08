@@ -28,6 +28,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+__version__ = "2.0.0"  # pyproject.toml の version と合わせます
+
 USER_AGENT = "status-code-checker"
 DEFAULT_TIMEOUT = 10.0
 
@@ -290,6 +292,9 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "URL を HTTP ステータスコードごとに整理します (リダイレクトは追いません)。"
         ),
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"status-code-checker {__version__}"
     )
     parser.add_argument(
         "files",

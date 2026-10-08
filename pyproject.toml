@@ -6,6 +6,19 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = ["requests>=2.34,<3"]
 
+[project.scripts]
+status-code-checker = "status_code_checker:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["status_code_checker.py"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["status_code_checker.py", "docs/options.md", "tests"]
+
 [dependency-groups]
 dev = ["pytest>=9.1,<10", "ruff>=0.16,<0.17"]
 

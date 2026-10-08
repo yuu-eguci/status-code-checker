@@ -3,6 +3,7 @@ import json
 import re
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,22 @@ def classify(urls, **kwargs):
     return {
         name: [result.url for result in results] for name, results in groups.items()
     }
+
+
+def test_version_matches_pyproject_and_console_script_points_at_main(capsys):
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+    assert scc.__version__ == pyproject["project"]["version"]
+    assert pyproject["project"]["scripts"] == {
+        "status-code-checker": "status_code_checker:main"
+    }
+
+    with pytest.raises(SystemExit) as exc:
+        scc.main(["--version"])
+
+    assert exc.value.code == 0
+    assert capsys.readouterr().out == f"status-code-checker {scc.__version__}\n"
 
 
 def test_parse_urls_strips_blank_comment_and_duplicate_lines():
