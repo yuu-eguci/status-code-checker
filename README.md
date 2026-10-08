@@ -39,6 +39,7 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
 - `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
 - `--format json` や `--format csv` で機械可読な出力にできます。
+- `--format json` の結果を保存しておけば、`--diff 前回.json` で前回からの変化 (CHANGED / ADDED / REMOVED) だけを表示できます。
 - オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
 - User-Agent は `status-code-checker` で送ります。
 - `--header 'Authorization: Bearer xxx'` で送るヘッダを足せます (複数可)。ログインが要るページの確認に使えます。

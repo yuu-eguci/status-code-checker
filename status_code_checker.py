@@ -203,6 +203,41 @@ def format_csv(results: Iterable[Result]) -> str:
     return buffer.getvalue()
 
 
+def format_diff(previous: Mapping[str, str], results: Iterable[Result]) -> str:
+    """前回の {URL: グループ} と比べ、変わった URL だけを並べます。"""
+    current = {result.url: result.group for result in results}
+    sections = {
+        "CHANGED": [
+            f"  {url}: {previous[url]} -> {group}"
+            for url, group in current.items()
+            if url in previous and previous[url] != group
+        ],
+        "ADDED": [
+            f"  {url}: {group}" for url, group in current.items() if url not in previous
+        ],
+        "REMOVED": [
+            f"  {url}: {group}" for url, group in previous.items() if url not in current
+        ],
+    }
+    lines = []
+    for name, items in sections.items():
+        if items:
+            lines.append(name)
+            lines.extend(items)
+    return "\n".join(lines)
+
+
+def load_previous(path: str) -> dict[str, str]:
+    """``--format json`` で保存した結果を {URL: グループ} にします。"""
+    data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        raise ValueError(f"{path}: schema が 1 ではありません。")
+    try:
+        return {result["url"]: result["group"] for result in data["results"]}
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"{path}: --format json の出力ではありません。") from exc
+
+
 def _read(name: str) -> str:
     if name == "-":
         return sys.stdin.read()
@@ -320,11 +355,19 @@ def main(argv: list[str] | None = None) -> int:
         default="text",
         help="出力形式 (既定: text)",
     )
+    parser.add_argument(
+        "--diff",
+        metavar="PREVIOUS.json",
+        help="--format json で保存した前回の結果と比べ、変化した URL だけを表示します",
+    )
     args = parser.parse_args(argv)
 
+    if args.diff is not None and args.format != "text":
+        parser.error("--diff は text 形式でだけ使えます。")
     try:
+        previous = load_previous(args.diff) if args.diff is not None else None
         urls = parse_urls("\n".join(_read(name) for name in args.files or ["-"]))
-    except (OSError, UnicodeDecodeError) as exc:
+    except (OSError, ValueError) as exc:  # UnicodeDecodeError も ValueError です
         parser.error(str(exc))
     if not urls:
         parser.error("URL がありません。")
@@ -342,7 +385,10 @@ def main(argv: list[str] | None = None) -> int:
         if (not args.only or matches(result.group, args.only))
         and not matches(result.group, args.exclude)
     ]
-    if args.format == "json":
+    if previous is not None:
+        if diff := format_diff(previous, results):
+            print(diff)
+    elif args.format == "json":
         print(format_json(shown))
     elif args.format == "csv":
         print(format_csv(shown), end="")

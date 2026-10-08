@@ -5,7 +5,8 @@
 python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
                               [--header '名前: 値']
                               [--expect パターン] [--only パターン] [--exclude パターン]
-                              [-v] [--format {text,json,csv}] [FILE ...]
+                              [-v] [--format {text,json,csv}] [--diff 前回.json]
+                              [FILE ...]
 ```
 
 | オプション | 既定 | 説明 |
@@ -19,6 +20,7 @@ python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
 | `--only パターン` | なし | 指定したグループだけを表示します。 |
 | `--exclude パターン` | なし | 指定したグループを表示から外します。`--only` と同時に指定すると両方が適用されます。 |
 | `-v`, `--verbose` | オフ | 各 URL の行に、応答ヘッダが届くまでの時間 (ms)、Content-Type、Location を 2 つの空白区切りで添えます。分からない項目は省きます。 |
+| `--diff 前回.json` | なし | `--format json` で保存した前回の結果と比べ、グループが変わった URL (`CHANGED`)、前回なかった URL (`ADDED`)、今回なかった URL (`REMOVED`) だけを表示します。変化がなければ何も表示しません。並びは入力順 (`REMOVED` は前回の JSON の順) です。`--format json` / `csv` とは併用できず、`--only` / `--exclude` / `-v` は無視します。前回を `--only` / `--exclude` 付きで保存していると、絞られていた URL は `ADDED` 扱いになります。終了コードは今回の結果で決まります。 |
 | `--format 形式` | `text` | `json` か `csv` にすると、グループ分けせず入力順に 1 URL 1 レコードで出します。`--only` / `--exclude` は効きます。`-v` は無視します (常に全項目を出します)。 |
 
 `-v` の出力例です。本文はダウンロードしないので、時間は応答ヘッダが届くまでの時間です (エラーの場合は諦めるまでの時間)。
@@ -78,6 +80,25 @@ JSON は `{"schema": 1, "results": [...]}` の形です。`schema` は項目の�
 CSV は 1 行目が見出し (`url,group,status,location,content_type,elapsed_ms`) です。JSON で `null` の項目は CSV では空欄です。
 
 表示する URL がなければ、JSON は `results` が空配列、CSV は見出し行だけになります。
+
+## --diff の出力例
+
+```bash
+docker compose run --rm app --format json urls.txt > last.json
+# 後日
+docker compose run --rm app --diff last.json urls.txt
+```
+
+```
+CHANGED
+  https://example.com/old: 200 -> 404
+ADDED
+  https://example.com/new: 200
+REMOVED
+  https://example.com/gone: 301
+```
+
+前回の JSON が読めない、または `schema` が `1` でないときは使い方の誤り (終了コード 2) です。
 
 ## 終了コード
 

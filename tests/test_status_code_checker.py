@@ -387,6 +387,60 @@ def test_main_format_csv(server, tmp_path: Path, capsys):
     )
 
 
+def test_format_diff_lists_changed_added_and_removed_urls():
+    previous = {"http://same/": "200", "http://old/": "200", "http://gone/": "301"}
+    results = [
+        scc.Result("http://same/", "200"),
+        scc.Result("http://old/", "404"),
+        scc.Result("http://new/", "TIMEOUT"),
+    ]
+    assert scc.format_diff(previous, results) == (
+        "CHANGED\n  http://old/: 200 -> 404\n"
+        "ADDED\n  http://new/: TIMEOUT\n"
+        "REMOVED\n  http://gone/: 301"
+    )
+    assert scc.format_diff({"http://same/": "200"}, results[:1]) == ""
+
+
+def test_main_diff_compares_with_a_saved_json_run(server, tmp_path: Path, capsys):
+    flaky = f"{server.url}/flaky/1"  # 1 回目は切断、2 回目から 200
+    gone = f"{server.url}/status/404"
+    new = f"{server.url}/status/301"
+    (tmp_path / "before.txt").write_text(f"{flaky}\n{gone}\n", encoding="utf-8")
+    (tmp_path / "after.txt").write_text(f"{flaky}\n{new}\n", encoding="utf-8")
+
+    assert scc.main(["--format", "json", str(tmp_path / "before.txt")]) == 1
+    (tmp_path / "last.json").write_text(capsys.readouterr().out, encoding="utf-8")
+
+    code = scc.main(
+        ["--diff", str(tmp_path / "last.json"), str(tmp_path / "after.txt")]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out == (
+        f"CHANGED\n  {flaky}: CONNECTION_ERROR -> 200\n"
+        f"ADDED\n  {new}: 301\n"
+        f"REMOVED\n  {gone}: 404\n"
+    )
+
+    (tmp_path / "last.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "results": [
+                    {"url": flaky, "group": "200"},
+                    {"url": new, "group": "301"},
+                ],
+            }
+        )
+    )
+    assert (
+        scc.main(["--diff", str(tmp_path / "last.json"), str(tmp_path / "after.txt")])
+        == 0
+    )
+    assert capsys.readouterr().out == ""
+
+
 def test_main_verbose_option(server, tmp_path: Path, capsys):
     moved = f"{server.url}/status/302"
     (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
@@ -460,11 +514,16 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--only", "200,", "-"], "不正なパターンです: ''"),
         (["--exclude", "timeout", "-"], "不正なパターンです: 'timeout'"),
         (["--format", "xml", "-"], "invalid choice: 'xml'"),
+        (["--diff", "/no/such/last.json", "-"], "last.json"),
+        (["--diff", "{tmp_path}/binary.txt", "-"], "'utf-8' codec can't decode"),
+        (["--diff", "{tmp_path}/schema2.json", "-"], "schema"),
+        (["--diff", "{tmp_path}/schema2.json", "--format", "json", "-"], "text 形式"),
         (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )
 def test_main_exits_2_on_usage_errors(argv, message, tmp_path: Path, capsys):
     (tmp_path / "binary.txt").write_bytes(b"\xff\xfe\x00http://a/\n")
+    (tmp_path / "schema2.json").write_text('{"schema": 2, "results": []}')
     argv = [arg.format(tmp_path=tmp_path) for arg in argv]
 
     with pytest.raises(SystemExit) as exc:
