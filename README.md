@@ -1,9 +1,9 @@
 StatusCodeChecker
 ===
 
-好きなだけURL書いてください。
+好きなだけ URL 書いてください。
 ステータスコードごとに整理します。
-時間はかかるけどね。ごめんね。
+リンク切れとか、まとめて見たいときにどうぞ。
 
 - Docker: 対応!
 - Python: 3.14!
@@ -17,7 +17,7 @@ printf 'https://example.com/\nhttps://example.com/nothing\n' > urls.txt
 docker compose run --rm app urls.txt
 ```
 
-urls.txt の URL を 1 つずつ GET して、ステータスコードごとにまとめて表示します。
+これで URL を順番に調べて、こんな感じにまとめてくれる。
 
 ```
 200
@@ -26,41 +26,19 @@ urls.txt の URL を 1 つずつ GET して、ステータスコードごとに�
   https://example.com/nothing
 ```
 
-Docker を使わないなら、uv があればこれだけで動きます。
+URL は 1 行に 1 つ。空行やコメントは無視するし、同じ URL は 1 回だけ。
+リダイレクトは追わないので、3xx もそのまま出る。
 
-```bash
-uvx --from git+https://github.com/yuu-eguci/status-code-checker status-code-checker urls.txt
-```
-
-## 使い方
-
-- 入力は 1 行 1 URL です。空行と `#` で始まる行は無視し、重複は 1 回だけ調べます。
-- ファイルは複数渡せます。渡さないか `-` を渡すと標準入力を読みます: `docker compose run --rm -T app < urls.txt`
-- リダイレクトは追いません。3xx はそのまま 3xx として報告します。
-- 応答がない URL はクラッシュせず `TIMEOUT` / `CONNECTION_ERROR` / `INVALID_URL` / `ERROR` のグループに入ります。
-- `--timeout 秒` で 1 URL あたりのタイムアウトを変えられます (既定 10 秒)。
-- `--workers 数` で同時に調べる URL の数を増やせます (既定 1)。出力の順番は変わりません。
-- `--retry 回数` で `TIMEOUT` / `CONNECTION_ERROR` / `ERROR` になった URL をその回数まで調べ直します (既定 0)。
-- `--head` で GET の代わりに HEAD を送れます (HEAD に 405 などを返すサーバーもあるので既定は GET です)。
-- `--expect 200,3xx` のように期待するコードを指定すると、合わない URL があれば終了コード 1 になります (CI 向け)。
-- `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
-- `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
-- `--summary` を付けると URL を並べず、グループごとの件数だけを `200: 12` のように表示します。
-- `--format json` や `--format csv` で機械可読な出力にできます。
-- `--format json` の結果を保存しておけば、`--diff 前回.json` で前回からの変化 (CHANGED / ADDED / REMOVED) だけを表示できます。
-- `--version` でバージョンを表示します。
-- オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
-- User-Agent は `status-code-checker` で送ります。
-- `--header 'Authorization: Bearer xxx'` で送るヘッダを足せます (複数可)。ログインが要るページの確認に使えます。
-- 終了コードは、全部応答があれば 0、エラーグループがあれば 1、`--expect` に合わない URL があっても 1、使い方の誤り (URL なし、読めないファイル、不正なオプション値、併用できないオプション) なら 2 です。
+並列で調べたり、件数だけ見たり、前回との差分を見たりもできるよ。
+そのへんは [オプション一覧](docs/options.md) にまとめた。
 
 ## 開発
 
 ```bash
-docker compose run --rm test   # pytest (ローカルの HTTP フィクスチャだけを使います)
-docker compose run --rm lint   # ruff check + ruff format --check
+docker compose run --rm test
+docker compose run --rm lint
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) でも同じ lint とテストを回します。
+テストと lint はこれで。GitHub Actions でも回してる。
 
 ![1](media/STATUSCODE.jpg)
