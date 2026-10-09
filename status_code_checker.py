@@ -197,6 +197,13 @@ def format_result(groups: dict[str, list[Result]], *, verbose: bool = False) -> 
     return "\n".join(lines)
 
 
+def format_summary(groups: dict[str, list[Result]]) -> str:
+    """``format_result`` と同じ並びで、グループごとの件数だけを整形します。"""
+    return "\n".join(
+        f"{name}: {len(groups[name])}" for name in sorted(groups, key=_group_order)
+    )
+
+
 def format_json(results: Iterable[Result]) -> str:
     """入力順に 1 URL 1 レコードの JSON にします (docs/options.md 参照)。"""
     payload = {"schema": 1, "results": [asdict(result) for result in results]}
@@ -367,6 +374,11 @@ def main(argv: list[str] | None = None) -> int:
         help="各 URL に応答時間、Content-Type、Location を添えます",
     )
     parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="URL を並べず、グループごとの件数だけを表示します",
+    )
+    parser.add_argument(
         "--format",
         choices=["text", "json", "csv"],
         default="text",
@@ -381,6 +393,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.diff is not None and args.format != "text":
         parser.error("--diff は text 形式でだけ使えます。")
+    if args.summary and args.format != "text":
+        parser.error("--summary は text 形式でだけ使えます。")
+    if args.summary and args.diff is not None:
+        parser.error("--summary と --diff は同時に使えません。")
     try:
         previous = load_previous(args.diff) if args.diff is not None else None
         urls = parse_urls("\n".join(_read(name) for name in args.files or ["-"]))
@@ -410,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
         print(format_json(shown))
     elif args.format == "csv":
         print(format_csv(shown), end="")
+    elif shown and args.summary:
+        print(format_summary(group(shown)))
     elif shown:
         print(format_result(group(shown), verbose=args.verbose))
 

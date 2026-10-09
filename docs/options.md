@@ -5,7 +5,8 @@
 python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
                               [--head] [--header '名前: 値']
                               [--expect パターン] [--only パターン] [--exclude パターン]
-                              [-v] [--format {text,json,csv}] [--diff 前回.json]
+                              [-v] [--summary] [--format {text,json,csv}]
+                              [--diff 前回.json]
                               [--version] [FILE ...]
 ```
 
@@ -24,8 +25,9 @@ python status_code_checker.py [--timeout 秒] [--workers 数] [--retry 回数]
 | `--only パターン` | なし | 指定したグループだけを表示します。 |
 | `--exclude パターン` | なし | 指定したグループを表示から外します。`--only` と同時に指定すると両方が適用されます。 |
 | `-v`, `--verbose` | オフ | 各 URL の行に、応答ヘッダが届くまでの時間 (ms)、Content-Type、Location を 2 つの空白区切りで添えます。分からない項目は省きます。 |
-| `--diff 前回.json` | なし | `--format json` で保存した前回の結果と比べ、グループが変わった URL (`CHANGED`)、前回なかった URL (`ADDED`)、今回なかった URL (`REMOVED`) だけを表示します。変化がなければ何も表示しません。並びは入力順 (`REMOVED` は前回の JSON の順) です。`--format json` / `csv` とは併用できず、`--only` / `--exclude` / `-v` は無視します。前回を `--only` / `--exclude` 付きで保存していると、絞られていた URL は `ADDED` 扱いになります。終了コードは今回の結果で決まります。 |
-| `--format 形式` | `text` | `json` か `csv` にすると、グループ分けせず入力順に 1 URL 1 レコードで出します。`--only` / `--exclude` は効きます。`-v` は無視します (常に全項目を出します)。 |
+| `--summary` | オフ | URL を並べず、グループごとの件数だけを `200: 12` の形で 1 行ずつ表示します。並びはテキスト出力と同じです。`--only` / `--exclude` は効き、`-v` は無視します。`--format json` / `csv` や `--diff` とは併用できません。終了コードは変わりません。 |
+| `--diff 前回.json` | なし | `--format json` で保存した前回の結果と比べ、グループが変わった URL (`CHANGED`)、前回なかった URL (`ADDED`)、今回なかった URL (`REMOVED`) だけを表示します。変化がなければ何も表示しません。並びは入力順 (`REMOVED` は前回の JSON の順) です。`--format json` / `csv` や `--summary` とは併用できず、`--only` / `--exclude` / `-v` は無視します。前回を `--only` / `--exclude` 付きで保存していると、絞られていた URL は `ADDED` 扱いになります。終了コードは今回の結果で決まります。 |
+| `--format 形式` | `text` | `json` か `csv` にすると、グループ分けせず入力順に 1 URL 1 レコードで出します。`--only` / `--exclude` は効きます。`-v` は無視します (常に全項目を出します)。`--summary` とは併用できません。 |
 
 `-v` の出力例です。本文はダウンロードしないので、時間は応答ヘッダが届くまでの時間です (エラーの場合は諦めるまでの時間)。
 
@@ -39,6 +41,14 @@ TIMEOUT
 ```
 
 `--only` と `--exclude` は表示だけを絞ります。終了コードは絞る前の結果で決まります。
+
+`--summary` の出力例です。
+
+```
+200: 12
+404: 2
+TIMEOUT: 1
+```
 
 ## パターン
 
@@ -110,4 +120,4 @@ REMOVED
 |---|---|
 | `0` | すべての URL から応答があり、`--expect` があればすべて合いました (4xx や 5xx も「応答あり」です)。 |
 | `1` | `TIMEOUT` / `CONNECTION_ERROR` / `INVALID_URL` / `ERROR` のグループが 1 つ以上あるか、`--expect` に合わない URL があります。 |
-| `2` | 使い方の誤りです (URL なし、読めないファイル、不正なオプション値)。 |
+| `2` | 使い方の誤りです (URL なし、読めないファイル、不正なオプション値、併用できないオプション)。 |

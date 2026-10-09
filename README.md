@@ -45,13 +45,14 @@ uvx --from git+https://github.com/yuu-eguci/status-code-checker status-code-chec
 - `--expect 200,3xx` のように期待するコードを指定すると、合わない URL があれば終了コード 1 になります (CI 向け)。
 - `--only 4xx,5xx,TIMEOUT` や `--exclude 200` で表示するグループを絞れます。終了コードは絞る前の結果で決まります。
 - `-v` を付けると各 URL に応答までの時間、Content-Type、リダイレクト先 (Location) を添えます。
+- `--summary` を付けると URL を並べず、グループごとの件数だけを `200: 12` のように表示します。
 - `--format json` や `--format csv` で機械可読な出力にできます。
 - `--format json` の結果を保存しておけば、`--diff 前回.json` で前回からの変化 (CHANGED / ADDED / REMOVED) だけを表示できます。
 - `--version` でバージョンを表示します。
 - オプションの詳しい説明は [docs/options.md](docs/options.md) にあります。
 - User-Agent は `status-code-checker` で送ります。
 - `--header 'Authorization: Bearer xxx'` で送るヘッダを足せます (複数可)。ログインが要るページの確認に使えます。
-- 終了コードは、全部応答があれば 0、エラーグループがあれば 1、`--expect` に合わない URL があっても 1、使い方の誤り (URL なし、読めないファイル、不正なオプション値) なら 2 です。
+- 終了コードは、全部応答があれば 0、エラーグループがあれば 1、`--expect` に合わない URL があっても 1、使い方の誤り (URL なし、読めないファイル、不正なオプション値、併用できないオプション) なら 2 です。
 
 ## 開発
 

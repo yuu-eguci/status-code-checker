@@ -196,6 +196,15 @@ def test_format_result_sorts_status_codes_then_error_groups():
     )
 
 
+def test_format_summary_counts_urls_in_the_same_order_as_text_output():
+    result = {
+        "TIMEOUT": [scc.Result("http://t/", "TIMEOUT")],
+        "404": [scc.Result("http://n/", "404")],
+        "200": [scc.Result("http://a/", "200"), scc.Result("http://b/", "200")],
+    }
+    assert scc.format_summary(result) == "200: 2\n404: 1\nTIMEOUT: 1"
+
+
 @pytest.mark.parametrize(
     ("group", "patterns", "expected"),
     [
@@ -489,6 +498,31 @@ def test_main_diff_ignores_filters_and_keeps_exit_code(server, tmp_path: Path, c
     assert capsys.readouterr().out == "ADDED\n  nope: INVALID_URL\n"
 
 
+def test_main_summary_applies_filters_ignores_verbose_and_keeps_exit_code(
+    server, tmp_path: Path, capsys
+):
+    ok = f"{server.url}/status/200"
+    (tmp_path / "u.txt").write_text(
+        f"{ok}\n{ok}?2\n{server.url}/status/404\n{server.url}/status/500\nnope\n",
+        encoding="utf-8",
+    )
+    options = ["--summary", "--exclude", "5xx", "-v", "--expect", "2xx"]
+
+    assert scc.main([*options, str(tmp_path / "u.txt")]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "200: 2\n404: 1\nINVALID_URL: 1\n"
+    assert "3 件の URL が --expect に合いませんでした。" in captured.err
+
+
+def test_main_summary_prints_nothing_when_everything_is_filtered(
+    server, tmp_path: Path, capsys
+):
+    (tmp_path / "u.txt").write_text(f"{server.url}/status/200\n", encoding="utf-8")
+
+    assert scc.main(["--summary", "--only", "4xx", str(tmp_path / "u.txt")]) == 0
+    assert capsys.readouterr().out == ""
+
+
 def test_main_verbose_option(server, tmp_path: Path, capsys):
     moved = f"{server.url}/status/302"
     (tmp_path / "u.txt").write_text(f"{moved}\n", encoding="utf-8")
@@ -575,6 +609,9 @@ def test_main_reads_file_with_utf8_bom(server, tmp_path: Path, capsys):
         (["--diff", "{tmp_path}/binary.txt", "-"], "'utf-8' codec can't decode"),
         (["--diff", "{tmp_path}/schema2.json", "-"], "schema"),
         (["--diff", "{tmp_path}/schema2.json", "--format", "json", "-"], "text 形式"),
+        (["--summary", "--format", "csv", "-"], "--summary は text 形式"),
+        (["--summary", "--format", "json", "-"], "--summary は text 形式"),
+        (["--summary", "--diff", "{tmp_path}/schema2.json", "-"], "同時に使えません"),
         (["{tmp_path}/binary.txt"], "'utf-8' codec can't decode"),
     ],
 )
